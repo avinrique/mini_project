@@ -1,0 +1,809 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Code Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/dracula.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #282a36;
+            color: #f8f8f2;
+        }
+        #editor {
+            flex: 1;
+            border: 1px solid #44475a;
+            border-radius: 4px;
+            margin: 10px;
+        }
+        #output {
+            border-top: 1px solid #44475a;
+            padding: 10px;
+            background: #282a36;
+            font-family: monospace;
+            height: 150px;
+            overflow-y: auto;
+            color: #f8f8f2;
+        }
+        #language-selector, #run-button, #lint-button {
+            margin: 10px;
+            font-size: 16px;
+        }
+        #language-selector {
+            background-color: #44475a;
+            color: #f8f8f2;
+            border: 1px solid #6272a4;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        #run-button, #lint-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #run-button {
+            background-color: #50fa7b;
+            color: #282a36;
+        }
+        #lint-button {
+            background-color: #bd93f9;
+            color: #282a36;
+        }
+        #run-button:hover {
+            background-color: #5af78e;
+        }
+        #lint-button:hover {
+            background-color: #c2a3f1;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 10px;
+        }
+        .error {
+            color: #ff5555;
+        }
+        .warning {
+            color: #ffb86c;
+        }
+        .loading {
+            color: #6272a4;
+            font-style: italic;
+        }
+        h1 {
+            color: #bd93f9;
+            text-align: center;
+            margin: 10px 0;
+        }
+        pre {
+            color: #f8f8f2;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Online Code Editor</h1>
+    <div class="controls">
+        <select id="language-selector">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+            <option value="cpp">C++</option>
+            <option value="c">C</option>
+        </select>
+        <button id="run-button">Run Code</button>
+        <button id="lint-button">Check Code</button>
+    </div>
+    <textarea id="editor"></textarea>
+    <div id="output"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/javascript-hint.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/show-hint.min.css">
+
+    <script>
+        // Initialize CodeMirror editor
+        const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+            mode: 'javascript',
+            lineNumbers: true,
+            theme: 'dracula',
+            extraKeys: { "Ctrl-Space": "autocomplete" }
+        });
+
+        // Output container
+        const output = document.getElementById('output');
+
+        // Language modes mapping
+        const languageModes = {
+            javascript: 'javascript',
+            python: 'python',
+            java: 'text/x-java',
+            cpp: 'text/x-c++src',
+            c: 'text/x-csrc'
+        };
+
+        // Change editor mode based on language selection
+        document.getElementById('language-selector').addEventListener('change', (event) => {
+            const selectedLanguage = event.target.value;
+            editor.setOption('mode', languageModes[selectedLanguage]);
+        });
+
+        // Enable autocomplete on keypress
+        editor.on('keypress', (cm, event) => {
+            if (!cm.state.completionActive && event.key.length === 1) {
+                CodeMirror.commands.autocomplete(cm, null, { completeSingle: false });
+            }
+        });
+
+        // Function to send code to server
+        async function sendCodeToServer(endpoint) {
+            const code = editor.getValue();
+            const language = document.getElementById('language-selector').value;
+            
+            output.innerHTML = '<div class="loading">Processing code...</div>';
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code, language })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                throw new Error(`Failed to process code: ${error.message}`);
+            }
+        }
+
+        // Run code button handler
+        document.getElementById('run-button').addEventListener('click', async () => {
+            try {
+                const result = await sendCodeToServer('/execute');
+                output.innerHTML = `<pre>${result.output}</pre>`;
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Lint code button handler
+        document.getElementById('lint-button').addEventListener('click', async () => {
+            try {
+                const result = await sendCodeToServer('/checklint');
+                output.innerHTML = ''; // Clear previous output
+                
+                if (result.comments && result.comments.length > 0) {
+                    result.comments.forEach(comment => {
+                        const div = document.createElement('div');
+                        div.className = comment.type;
+                        div.textContent = `Line ${comment.line}: ${comment.message}`;
+                        output.appendChild(div);
+                    });
+                } else {
+                    output.innerHTML = '<div>No issues found!</div>';
+                }
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html> -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Code Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/dracula.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #282a36;
+            color: #f8f8f2;
+        }
+        #editor {
+            flex: 1;
+            border: 1px solid #44475a;
+            border-radius: 4px;
+            margin: 10px;
+        }
+        #output {
+    border-top: 1px solid #44475a;
+    padding: 15px;
+    background: #282a36;
+    font-family: "Courier New", monospace;
+    color: #f8f8f2;
+    height: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    border-radius: 8px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    font-size: 14px;
+}
+
+#output pre {
+    margin: 0;
+    font-family: "Courier New", monospace;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+}
+
+.error {
+    color: #ff5555;
+    font-weight: bold;
+    margin: 5px 0;
+}
+
+.warning {
+    color: #ffb86c;
+    font-weight: bold;
+    margin: 5px 0;
+}
+
+.loading {
+    color: #6272a4;
+    font-style: italic;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    #output {
+        padding: 10px;
+        max-height: 200px;
+    }
+
+    #output pre {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 480px) {
+    #output {
+        padding: 8px;
+        max-height: 150px;
+    }
+
+    #output pre {
+        font-size: 12px;
+    }
+}
+
+        #language-selector, #run-button, #lint-button {
+            margin: 10px;
+            font-size: 16px;
+        }
+        #language-selector {
+            background-color: #44475a;
+            color: #f8f8f2;
+            border: 1px solid #6272a4;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        #run-button, #lint-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #run-button {
+            background-color: #50fa7b;
+            color: #282a36;
+        }
+        #lint-button {
+            background-color: #bd93f9;
+            color: #282a36;
+        }
+        #run-button:hover {
+            background-color: #5af78e;
+        }
+        #lint-button:hover {
+            background-color: #c2a3f1;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 10px;
+        }
+
+        h1 {
+            color: #bd93f9;
+            text-align: center;
+            margin: 10px 0;
+        }
+        pre {
+            color: #f8f8f2;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Online Code Editor</h1>
+    <div class="controls">
+        <select id="language-selector">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+            <option value="cpp">C++</option>
+            <option value="c">C</option>
+        </select>
+        <button id="run-button">Run Code</button>
+        <button id="lint-button">Check Code</button>
+    </div>
+    <textarea id="editor"></textarea>
+    <div id="output"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/javascript-hint.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/show-hint.min.css">
+
+    <script>
+        // Initialize CodeMirror editor
+        const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+            mode: 'javascript',
+            lineNumbers: true,
+            theme: 'dracula',
+            extraKeys: { "Ctrl-Space": "autocomplete" }
+        });
+
+        // Output container
+        const output = document.getElementById('output');
+
+        // Language modes mapping
+        const languageModes = {
+            javascript: 'javascript',
+            python: 'python',
+            java: 'text/x-java',
+            cpp: 'text/x-c++src',
+            c: 'text/x-csrc'
+        };
+
+        // Change editor mode based on language selection
+        document.getElementById('language-selector').addEventListener('change', (event) => {
+            const selectedLanguage = event.target.value;
+            editor.setOption('mode', languageModes[selectedLanguage]);
+        });
+
+        // Enable autocomplete on keypress
+        editor.on('keypress', (cm, event) => {
+            if (!cm.state.completionActive && event.key.length === 1) {
+                CodeMirror.commands.autocomplete(cm, null, { completeSingle: false });
+            }
+        });
+
+        // Function to send code to server
+        async function sendCodeToServer(endpoint) {
+            const code = editor.getValue();
+            const language = document.getElementById('language-selector').value;
+            
+            output.innerHTML = '<div class="loading">Processing code...</div>';
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code, language })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                throw new Error(`Failed to process code: ${error.message}`);
+            }
+        }
+
+        // Run code button handler
+        document.getElementById('run-button').addEventListener('click', async () => {
+            try {
+                const result = await sendCodeToServer('/execute');
+                output.innerHTML = `<pre>${result.output}</pre>`;
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Lint code button handler
+        document.getElementById('lint-button').addEventListener('click', async () => {
+            try {
+                const result = await sendCodeToServer('/checklint');
+                output.innerHTML = ''; // Clear previous output
+                output.innerHTML = `<pre>${result.comments}</pre>`;
+                
+
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html> 
+
+
+ -->
+
+
+
+
+
+
+
+
+
+
+
+
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Code Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.2/html2pdf.bundle.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #282a36;
+            color: #f8f8f2;
+        }
+        #editor {
+            flex: 1;
+            border: 1px solid #44475a;
+            border-radius: 4px;
+            margin: 10px;
+        }
+        #output {
+            border-top: 1px solid #44475a;
+            padding: 15px;
+            background: #282a36;
+            font-family: "Courier New", monospace;
+            color: #f8f8f2;
+            height: auto;
+            max-height: 300px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            border-radius: 8px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            font-size: 14px;
+        }
+
+        #output pre {
+            margin: 0;
+            font-family: "Courier New", monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+
+        .error {
+            color: #ff5555;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .warning {
+            color: #ffb86c;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .loading {
+            color: #6272a4;
+            font-style: italic;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            #output {
+                padding: 10px;
+                max-height: 200px;
+            }
+
+            #output pre {
+                font-size: 13px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #output {
+                padding: 8px;
+                max-height: 150px;
+            }
+
+            #output pre {
+                font-size: 12px;
+            }
+        }
+
+        #language-selector, #run-button, #lint-button, #cre-rep {
+            margin: 10px;
+            font-size: 16px;
+        }
+        #language-selector {
+            background-color: #44475a;
+            color: #f8f8f2;
+            border: 1px solid #6272a4;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        #run-button, #lint-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #run-button {
+            background-color: #50fa7b;
+            color: #282a36;
+        }
+        #lint-button {
+            background-color: #bd93f9;
+            color: #282a36;
+        }
+        #cre-rep {
+            background-color: #bd93f9;
+            color: #282a36;
+        }
+        #run-button:hover {
+            background-color: #5af78e;
+        }
+        #lint-button:hover {
+            background-color: #c2a3f1;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 10px;
+        }
+
+        h1 {
+            color: #bd93f9;
+            text-align: center;
+            margin: 10px 0;
+        }
+        pre {
+            color: #f8f8f2;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>MEga ProjeKT</h1>
+    <div class="controls">
+        <select id="language-selector">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+            <option value="cpp">C++</option>
+            <option value="c">C</option>
+        </select>
+        <button id="run-button">Run Code</button>
+        <button id="lint-button">Check Code</button>
+        <button id="cre-rep">Create Report</button>
+    </div>
+    <textarea id="editor"></textarea>
+    <div id="output"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/javascript-hint.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/hint/show-hint.min.css">
+   
+
+
+    <script type="module">
+        import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js"; // Import marked.js as a module
+
+        // Initialize CodeMirror editor
+        const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+            mode: 'javascript',
+            lineNumbers: true,
+            theme: 'dracula',
+            extraKeys: { "Ctrl-Space": "autocomplete" }
+        });
+
+        // Output container
+        const output = document.getElementById('output');
+
+        // Language modes mapping
+        const languageModes = {
+            javascript: 'javascript',
+            python: 'python',
+            java: 'text/x-java',
+            cpp: 'text/x-c++src',
+            c: 'text/x-csrc'
+        };
+
+        // Change editor mode based on language selection
+        document.getElementById('language-selector').addEventListener('change', (event) => {
+            const selectedLanguage = event.target.value;
+            editor.setOption('mode', languageModes[selectedLanguage]);
+        });
+
+        // Enable autocomplete on keypress
+        editor.on('keypress', (cm, event) => {
+            if (!cm.state.completionActive && event.key.length === 1) {
+                CodeMirror.commands.autocomplete(cm, null, { completeSingle: false });
+            }
+        });
+
+        // Function to send code to server
+        async function sendCodeToServer(endpoint) {
+            const code = editor.getValue();
+            const language = document.getElementById('language-selector').value;
+
+            output.innerHTML = '<div class="loading">Processing code...</div>';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code, language })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                throw new Error(`Failed to process code: ${error.message}`);
+            }
+        }
+
+        // Run code button handler
+        document.getElementById('run-button').addEventListener('click', async () => {
+            try {
+                const result = await sendCodeToServer('/execute');
+                output.innerHTML = `<pre>${result.output}</pre>`;
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+        document.getElementById('cre-rep').addEventListener('click', async () => {
+            try {
+                const result = await sendCodeToServer('/crerep');
+                output.innerHTML = `<pre>${result.output}</pre>`;
+                const { jsPDF } = window.jspdf;
+
+                const doc = new jsPDF();
+
+                const test = marked.parse(result.output)
+                const content = test;
+
+                // Function to trigger PDF download
+                
+                    const options = {
+                        filename: 'generateds-pdf.pdf',  // PDF filename
+                        image: { type: 'jpeg', quality: 0.98 },  // Image quality in case of images in HTML
+                        html2canvas: { dpi: 192, letterRendering: true },  // Increase DPI for better quality
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },  // PDF format and orientation
+                    };
+
+                    html2pdf().from(content).set(options).save();
+
+                // // Add text to PDF
+              
+                
+            } catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Lint code button handler
+        document.getElementById('lint-button').addEventListener('click', async () => {
+            try {
+            const result = await sendCodeToServer('/checklint');
+            output.innerHTML = ''; // Clear previous output
+
+            // Check if lint results have comments and render them as HTML
+            if (result.comments && result.comments.length > 0) {
+                // Assuming result.comments is a string containing Markdown content
+                output.innerHTML = marked.parse(result.comments);
+            } else {
+                output.innerHTML = '<div>No issues found!</div>';
+            }
+        }catch (error) {
+                output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
